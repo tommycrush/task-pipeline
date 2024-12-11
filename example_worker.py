@@ -84,12 +84,12 @@ async def main():
 async def worker_loop(pipeline: TaskPipeline):
     while True:
         try:
-            await pipeline.log_tasks()
+            # Log the latest tasks in the database for debugging
+            # await pipeline.log_tasks()
 
             task = await pipeline.peel_next_eligible_waiting_task()
             if task:
                 print(f"Processing task {task.task_key}")
-                await pipeline.log_tasks()
                 await process_task(pipeline, task)
             else:
                 print("No eligible tasks found, waiting...")
