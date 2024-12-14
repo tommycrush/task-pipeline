@@ -21,9 +21,11 @@ async def process_task(pipeline: TaskPipeline, task: Task):
         elif task.task_key == "process_data":
             # Simulate processing data
             await asyncio.sleep(1)
-            # Access input_data safely with get() method or use empty dict as fallback
             input_data = task.input_data if task.input_data else {}
-            output_data = {"processed": f"Processed: {input_data}"}
+
+            # Access parent output data safely with get() method or use empty dict as fallback
+            random_number = task.parent_output_data.get("fetch_data")
+            output_data = {"processed": f"Processed: {input_data} {random_number}"}
             await pipeline.mark_task_as_completed(task.id, output_data)
             
         elif task.task_key == "generate_report":

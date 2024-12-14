@@ -1,6 +1,6 @@
 # What is TaskPipeline?
 
-TaskPipeline is a simple open source framework to manage distributed asynchronous tasks. It's designed specifically to be a starting-point for startups (and specifically those with AI/LLM workflows), that want a simple framework  to get started managing resilient workflows, but don't want the complexity of a full-fledged workflow management system (Airflow, etc).
+TaskPipeline is a simple open source framework to manage distributed asynchronous tasks. It's designed specifically to be a starting-point for small teams that want a simple and extensible framework to get started managing resilient workflows, but don't yet want the complexity of a full-fledged workflow management system (Airflow, etc). This was inspired by needing resilient multi-step orchestration for AI/LLM workflows, but will work for async tasks generally.
 
 ## Features
 
@@ -34,4 +34,3 @@ See the example_worker.py file for an example of how to use the framework.
 ## Future Improvements
 
 1. Allow multiple tasks (not just 1) with the same task_key to be a dependency of a child.
-2. Mark running tasks with no more retries as failed in a cleanup job.
