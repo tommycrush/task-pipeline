@@ -46,20 +46,20 @@ async def create_example_workflow(pipeline: TaskPipeline):
         "fetch_data": TaskDefinition(
             task_key="fetch_data",
             input_data={"source": "example_api"},
-            max_retries=3,
+            max_attempts=3,
             execution_timeout_seconds=1
         ),
         "process_data": TaskDefinition(
             task_key="process_data",
             input_data={"something_else": "other data"},
             depends_on=["fetch_data"],
-            max_retries=2,
+            max_attempts=2,
             execution_timeout_seconds=60  # 10 minutes timeout
         ),
         "generate_report": TaskDefinition(
             task_key="generate_report",
             depends_on=["process_data"],
-            max_retries=1
+            max_attempts=1
         )
     })
     

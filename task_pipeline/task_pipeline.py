@@ -34,7 +34,7 @@ class TaskPipeline:
                         LEFT JOIN task_dependencies td ON t.id = td.child_task_id
                         LEFT JOIN tasks parent ON td.parent_task_id = parent.id
                         WHERE ((t.status = 'waiting' AND t.lock_instance_uuid IS NULL)
-                           OR (t.status = 'running' AND t.retry_count < t.max_retries AND t.lock_acquired_at + (t.execution_timeout_seconds || ' seconds')::INTERVAL < CURRENT_TIMESTAMP ))
+                           OR (t.status = 'running' AND t.retry_count < t.max_attempts AND t.lock_acquired_at + (t.execution_timeout_seconds || ' seconds')::INTERVAL < CURRENT_TIMESTAMP ))
                         AND (t.task_key = ANY(%s) OR %s)
                         GROUP BY t.id
                         HAVING BOOL_AND(parent.status = 'completed' OR parent.id IS NULL)
@@ -47,7 +47,7 @@ class TaskPipeline:
                         retry_count = retry_count + 1
                     WHERE id = (SELECT id FROM eligible_tasks)
                     RETURNING t.id, t.task_key, t.status, t.input_data, t.output_data, 
-                              t.error_message, t.retry_count, t.max_retries, t.created_at,
+                              t.error_message, t.retry_count, t.max_attempts, t.created_at,
                               t.lock_instance_uuid, t.lock_acquired_at;
                     """
                     # Convert None to NULL for PostgreSQL with explicit type casting
@@ -132,12 +132,12 @@ class TaskPipeline:
                 try:
                     # Get current retry information
                     await cur.execute(
-                        "SELECT retry_count, max_retries FROM tasks WHERE id = %s",
+                        "SELECT retry_count, max_attempts FROM tasks WHERE id = %s",
                         (task_id,)
                     )
-                    retry_count, max_retries = await cur.fetchone()
+                    retry_count, max_attempts = await cur.fetchone()
                     
-                    new_status = 'waiting' if retry_count < max_retries else 'failed'
+                    new_status = 'waiting' if retry_count < max_attempts else 'failed'
                     print(new_status)
                     
                     # Build the WHERE clause based on is_system_cleanup
@@ -203,10 +203,10 @@ class TaskPipeline:
                     task_ids = {} 
                     for task_key, task_def in workflow.tasks.items():
                         await cur.execute("""
-                            INSERT INTO tasks (task_key, input_data, max_retries, execution_timeout_seconds)
+                            INSERT INTO tasks (task_key, input_data, max_attempts, execution_timeout_seconds)
                             VALUES (%s, %s, %s, %s)
                             RETURNING id
-                        """, (task_key, json.dumps(task_def.input_data), task_def.max_retries, task_def.execution_timeout_seconds))
+                        """, (task_key, json.dumps(task_def.input_data), task_def.max_attempts, task_def.execution_timeout_seconds))
                         task_ids[task_key] = (await cur.fetchone())[0]
                     
                     # Then create all dependencies
@@ -237,7 +237,7 @@ class TaskPipeline:
         async with await psycopg.AsyncConnection.connect(self.db_connection_string) as conn:
             async with conn.cursor() as cur:
                 query = """
-                SELECT id, task_key, status, retry_count, max_retries,
+                SELECT id, task_key, status, retry_count, max_attempts,
                        error_message, created_at, lock_acquired_at, lock_acquired_at + (execution_timeout_seconds || ' seconds')::INTERVAL AS execution_timeout_date, CURRENT_TIMESTAMP AS current_timestamp, execution_timeout_seconds
                 FROM tasks
                 ORDER BY created_at DESC
@@ -281,7 +281,7 @@ class TaskPipeline:
                 FROM tasks 
                 WHERE status = 'running'
                 AND lock_acquired_at + (execution_timeout_seconds || ' seconds')::INTERVAL < CURRENT_TIMESTAMP
-                AND retry_count >= max_retries
+                AND retry_count >= max_attempts
                 """
                 await cur.execute(query)
                 hanging_tasks = await cur.fetchall()

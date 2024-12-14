@@ -20,7 +20,7 @@ class Task:
     parent_output_data: Dict[str, Dict[str, Any]]
     error_message: Optional[str]
     retry_count: int
-    max_retries: int
+    max_attempts: int
     created_at: datetime
     lock_instance_uuid: Optional[UUID]
     lock_acquired_at: Optional[datetime]
@@ -39,7 +39,7 @@ class Task:
             parent_output_data=row.get('parent_output_data', {}),
             error_message=row['error_message'],
             retry_count=row['retry_count'],
-            max_retries=row['max_retries'],
+            max_attempts=row['max_attempts'],
             created_at=row['created_at'],
             lock_instance_uuid=row['lock_instance_uuid'],
             lock_acquired_at=row['lock_acquired_at']

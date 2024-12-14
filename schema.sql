@@ -6,8 +6,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     output_data JSON,
     error_message TEXT,
     retry_count INTEGER DEFAULT 0,
-    max_retries INTEGER DEFAULT 3,
-    execution_timeout_seconds INTEGER DEFAULT 500,
+    max_attempts INTEGER DEFAULT 3,
+    execution_timeout_seconds INTEGER DEFAULT 600,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     lock_instance_uuid UUID,
     lock_acquired_at TIMESTAMP WITH TIME ZONE
