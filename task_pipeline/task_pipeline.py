@@ -34,7 +34,7 @@ class TaskPipeline:
                         LEFT JOIN task_dependencies td ON t.id = td.child_task_id
                         LEFT JOIN tasks parent ON td.parent_task_id = parent.id
                         WHERE ((t.status = 'waiting' AND t.lock_instance_uuid IS NULL)
-                           OR (t.status = 'running' AND t.retry_count <= t.max_retries AND t.lock_acquired_at + (t.execution_timeout_seconds || ' seconds')::INTERVAL < CURRENT_TIMESTAMP ))
+                           OR (t.status = 'running' AND t.retry_count < t.max_retries AND t.lock_acquired_at + (t.execution_timeout_seconds || ' seconds')::INTERVAL < CURRENT_TIMESTAMP ))
                         AND (t.task_key = ANY(%s) OR %s)
                         GROUP BY t.id
                         HAVING BOOL_AND(parent.status = 'completed' OR parent.id IS NULL)
@@ -113,11 +113,17 @@ class TaskPipeline:
                 await cur.execute(query, (json_output_data, task_id, self.instance_uuid))
                 await conn.commit()
 
-    async def mark_task_as_failed(self, task_id: int, error_message: str) -> None:
+    async def mark_task_as_failed(self, task_id: int, error_message: str, is_system_cleanup: bool = False) -> None:
         """
         Marks a task as failed if retry count is over the max_retries,
         otherwise marks as permanently failed and marks all dependent tasks as 'wont_do'.
+        
+        Args:
+            task_id: The ID of the task to mark as failed
+            error_message: The error message to store
+            is_system_cleanup: If True, skips lock_instance_uuid check for system cleanup operations
         """
+        print(f"Marking task {task_id} as failed with error message: {error_message}")
         async with await psycopg.AsyncConnection.connect(self.db_connection_string) as conn:
             async with conn.cursor() as cur:
                 # Begin transaction
@@ -131,18 +137,26 @@ class TaskPipeline:
                     )
                     retry_count, max_retries = await cur.fetchone()
                     
-                    new_status = 'waiting' if retry_count <= max_retries else 'failed'
+                    new_status = 'waiting' if retry_count < max_retries else 'failed'
+                    print(new_status)
                     
-                    # Update the failed task.retry_count is incremented by 1 in the peel query, so we don't need to do it here.
-                    # Incrementing it here fails to capture the case where a task always dies before the explicit failure is logged. 
-                    await cur.execute("""
+                    # Build the WHERE clause based on is_system_cleanup
+                    where_clause = "WHERE id = %s"
+                    query_params = [new_status, error_message, task_id]
+                    
+                    if not is_system_cleanup:
+                        where_clause += " AND lock_instance_uuid = %s"
+                        query_params.append(self.instance_uuid)
+                    
+                    # Update the failed task
+                    await cur.execute(f"""
                         UPDATE tasks
                         SET status = %s,
                             error_message = %s,
                             lock_instance_uuid = NULL,
                             lock_acquired_at = NULL
-                        WHERE id = %s AND lock_instance_uuid = %s
-                    """, (new_status, error_message, task_id, self.instance_uuid))
+                        {where_clause}
+                    """, query_params)
 
                     # If task has permanently failed, mark all dependent tasks as 'wont_do'
                     if new_status == 'failed':
@@ -251,3 +265,33 @@ class TaskPipeline:
                 # Print the table
                 print("\nLatest Tasks:")
                 print(tabulate(formatted_rows, headers=headers, tablefmt='grid'))
+
+    async def mark_hanging_jobs_as_failed(self) -> Optional[List[int]]:
+        """
+        Identifies and marks tasks as failed if they:
+        1. Are in 'running' state
+        2. Have exceeded their execution timeout
+        3. Have no more retries available
+        """
+        async with await psycopg.AsyncConnection.connect(self.db_connection_string) as conn:
+            async with conn.cursor() as cur:
+                # Find hanging tasks
+                query = """
+                SELECT id 
+                FROM tasks 
+                WHERE status = 'running'
+                AND lock_acquired_at + (execution_timeout_seconds || ' seconds')::INTERVAL < CURRENT_TIMESTAMP
+                AND retry_count >= max_retries
+                """
+                await cur.execute(query)
+                hanging_tasks = await cur.fetchall()
+                
+                # Mark each hanging task as failed
+                for task_id, in hanging_tasks:
+                    await self.mark_task_as_failed(
+                        task_id=task_id,
+                        error_message="Task exceeded execution timeout and max attempts",
+                        is_system_cleanup=True
+                    )
+                # Return the task_ids
+                return [task_id for task_id, in hanging_tasks]

@@ -82,14 +82,21 @@ async def main():
     await worker_loop(pipeline)
 
 async def worker_loop(pipeline: TaskPipeline):
+
+    num_iteration = 0;
     while True:
+        num_iteration += 1;
         try:
+            if num_iteration % 10 == 0:
+                task_ids = await pipeline.mark_hanging_jobs_as_failed()
+                if task_ids:
+                    print(f"Marked {len(task_ids)} tasks as failed: {task_ids}")
             # Log the latest tasks in the database for debugging
             # await pipeline.log_tasks()
 
             task = await pipeline.peel_next_eligible_waiting_task()
             if task:
-                print(f"Processing task {task.task_key}")
+                print(f"Processing task {task.task_key} iteration {num_iteration}")
                 await process_task(pipeline, task)
             else:
                 print("No eligible tasks found, waiting...")
